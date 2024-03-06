@@ -178,16 +178,27 @@ class AttentionLayer(nn.Module):
                 sent_tensor = create_sentence_tensor(...) 
                 # sent_tensor.size = [batch, sent_len, hidden]
         2.  Why do we need to apply a mask to the attention scores?
+            We apply a mask to stop the model from training on future tokens.
+            Furthermore, we use a mask if the token is a padding.
+            This ensures that the model does not have access to future tokens and/or train on irrelevant data (i.e. padding).
         '''
         if src_mask is not None:
             src_mask = src_mask.unsqueeze(dim=1)
+            # src_mask.size = [batch_size, 1, src_time_steps]
             attn_scores.masked_fill_(src_mask, float('-inf'))
 
         attn_weights = F.softmax(attn_scores, dim=-1)
+        # attn_weights.size = [batch_size, 1, src_time_steps]
         attn_context = torch.bmm(attn_weights, encoder_out).squeeze(dim=1)
+        # attn_context.size = [batch_size, output_dims]
 
         context_plus_hidden = torch.cat([tgt_input, attn_context], dim=1)
+        # tgt_input.size = [batch_size, input_dims]
+        # attn_context.size = [batch_size, output_dims]
+        # context_plus_hidden.size = [batch_size, input_dims + output_dims]
+
         attn_out = torch.tanh(self.context_plus_hidden_projection(context_plus_hidden))
+        # attn_out.size = [batch_size, output_dims]
         '''___QUESTION-1-DESCRIBE-A-END___'''
 
         return attn_out, attn_weights.squeeze(dim=1)
@@ -199,9 +210,27 @@ class AttentionLayer(nn.Module):
         ___QUESTION-1-DESCRIBE-B-START___
         1.  Add tensor shape annotation to each of the output tensor
         2.  How are attention scores calculated? 
+
+            We calculate attention scores using a Query, Key, Value approach.
+            We consider each embedding vector as the query. 
+            I.e., we want to know how much we should 'attend' (therefore, a weight) to this query for each output.
+            Keys and Values are copies of the embedding vectors.
+            To calculate the weight for a query, we compare the similarities of the query with each key (by taking the softmax and turning it into a probability distribution).
+            The resulting similarities (weights) tell us how much the query should attend to for each value, 
+        
         '''
+
         projected_encoder_out = self.src_projection(encoder_out).transpose(2, 1)
+        # encoder_out = [src_time_steps, batch_size, output_dims]
+        # projected_encoder_out.size = [src_time_steps, output_dims, batch_size]
+
         attn_scores = torch.bmm(tgt_input.unsqueeze(dim=1), projected_encoder_out)
+        # [             src_time_steps, output_dims, batch_size]
+        # [batch_size,      1,          input_dims              ]
+        # [batch_size, src_time_steps, batch_size]
+
+        # tgt_input.unsqueeze(dim=1).size = [batch_size, 1, input_dims]
+        # attn_scores.size = [batch_size, src_time_steps, batch_size]
         '''___QUESTION-1-DESCRIBE-B-END___'''
 
         return attn_scores
@@ -275,8 +304,13 @@ class LSTMDecoder(Seq2SeqDecoder):
         # Initialize previous states (or retrieve from cache during incremental generation)
         '''
         ___QUESTION-1-DESCRIBE-C-START___
-        1.  When is cached_state == None? 
+        1.  When is cached_state == None?
+            When incremental_state is None or the full key is not in the incremental_state.
+            Therefore, this is either when the dictionary 'INCREMENTAL_STATE_INSTANCE_ID' is None (which is impossible as we initialise it in utils.py) or when the full key is not in the dictionary.
+            When the full key is not in the dictionary, this means that the model has been initialised but not trained yet.
         2.  What role does input_feed play?
+            input_feed is the previous output embedding vector.
+            We concatenate this to the current input embedding vector to keep track of the current 'state' of the translation.
         '''
         cached_state = utils.get_incremental_state(self, incremental_state, 'cached_state')
         if cached_state is not None:
@@ -309,8 +343,13 @@ class LSTMDecoder(Seq2SeqDecoder):
 
             '''
             ___QUESTION-1-DESCRIBE-D-START___
-            1.  Why is the attention function given the previous target state as one of its inputs? 
+            1.  Why is the attention function given the previous target state as one of its inputs?
+                We do this to keep track of previous target states and to dynamically perform attention based on the inputs.
+            
             2.  What is the purpose of the dropout layer?
+                The dropout layer ensures that the model does not overfit by setting some of the input feed values to zero.
+                In the base case, we set the probability of this occurring to 0.25.
+                Since we perform dropout on the input_feed, this means that we set roughly 25% of the values in this tensor to 0.
             '''
             if self.attention is None:
                 input_feed = tgt_hidden_states[-1]

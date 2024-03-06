@@ -123,13 +123,26 @@ def main(args):
             2.  Add line-by-line description about the following lines of code do.
             '''
             output, _ = model(sample['src_tokens'], sample['src_lengths'], sample['tgt_inputs'])
+            # output.size = [batch_size, tgt_time_steps, len(tgt_dict)]
+            # We first compute the output.
 
             loss = \
                 criterion(output.view(-1, output.size(-1)), sample['tgt_tokens'].view(-1)) / len(sample['src_lengths'])
+            # loss.size = [1]
+            # Then we calculate the current loss (CrossEntropy) of this output compared to the ground truth token.
+
             loss.backward()
+            # We perform back propagation based on our current loss, and calculate the gradient with respect to the loss.
+
             grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_norm)
+            # grad_norm.size = [1]
+            # We calculate the norm of the overall gradient to prevent the 'exploding gradient' problem.
+
             optimizer.step()
+            # We then update the gradients calculated in 'loss.backward()'.
+
             optimizer.zero_grad()
+            # This resets the gradients to be used for the next back propagation step.
             '''___QUESTION-1-DESCRIBE-E-END___'''
 
             # Update statistics for progress bar
