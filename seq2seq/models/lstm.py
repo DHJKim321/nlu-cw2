@@ -180,7 +180,8 @@ class AttentionLayer(nn.Module):
         2.  Why do we need to apply a mask to the attention scores?
             We apply a mask to stop the model from training on future tokens.
             Furthermore, we use a mask if the token is a padding.
-            This ensures that the model does not have access to future tokens and/or train on irrelevant data (i.e. padding).
+            This ensures that the model does not have access to future tokens and/or train on 
+            irrelevant data (i.e. padding).
         '''
         if src_mask is not None:
             src_mask = src_mask.unsqueeze(dim=1)
@@ -213,10 +214,13 @@ class AttentionLayer(nn.Module):
 
             We calculate attention scores using a Query, Key, Value approach.
             We consider each embedding vector as the query. 
-            I.e., we want to know how much we should 'attend' (therefore, a weight) to this query for each output.
+            I.e., we want to know how much we should 'attend' (therefore, a weight)
+            to this query for each output.
             Keys and Values are copies of the embedding vectors.
-            To calculate the weight for a query, we compare the similarities of the query with each key (by taking the softmax and turning it into a probability distribution).
-            The resulting similarities (weights) tell us how much the query should attend to for each value, 
+            To calculate the weight for a query, we compare the similarities of the query 
+            with each key (by taking the softmax and turning it into a probability distribution).
+            The resulting similarities (weights) tell us how much the query should attend to 
+            for each value, 
         
         '''
 
@@ -306,11 +310,15 @@ class LSTMDecoder(Seq2SeqDecoder):
         ___QUESTION-1-DESCRIBE-C-START___
         1.  When is cached_state == None?
             When incremental_state is None or the full key is not in the incremental_state.
-            Therefore, this is either when the dictionary 'INCREMENTAL_STATE_INSTANCE_ID' is None (which is impossible as we initialise it in utils.py) or when the full key is not in the dictionary.
-            When the full key is not in the dictionary, this means that the model has been initialised but not trained yet.
+            Therefore, this is either when the dictionary 'INCREMENTAL_STATE_INSTANCE_ID' is 
+            None (which is impossible as we initialise it in utils.py) 
+            or when the full key is not in the dictionary.
+            When the full key is not in the dictionary, this means that the model has been initialised
+            but not trained yet.
         2.  What role does input_feed play?
             input_feed is the previous output embedding vector.
-            We concatenate this to the current input embedding vector to keep track of the current 'state' of the translation.
+            We concatenate this to the current input embedding vector to keep track of the 
+            current 'state' of the translation.
         '''
         cached_state = utils.get_incremental_state(self, incremental_state, 'cached_state')
         if cached_state is not None:
