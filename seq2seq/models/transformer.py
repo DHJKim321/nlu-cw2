@@ -97,8 +97,13 @@ class TransformerEncoder(Seq2SeqEncoder):
         ___QUESTION-6-DESCRIBE-A-START___
         1.  Add tensor shape annotation to each of the output tensor
         2.  What is the purpose of the positional embeddings in the encoder and decoder? 
+        Without positional embeddings, transformers are position invariant as we sum the attention-weighted input vectors.
+        Therefore, we include an additional positional embedding to encode the 
+        positions of each word within the input to give more context to the model, 
+        which makes the model position equivariant but not invariant.
         '''
         embeddings += self.embed_positions(src_tokens)
+        # embeddings.size = [batch_size, src_time_steps, num_features]
         '''
         ___QUESTION-6-DESCRIBE-A-END___
         '''
@@ -187,10 +192,16 @@ class TransformerDecoder(Seq2SeqDecoder):
             ___QUESTION-6-DESCRIBE-B-START___
             1.  Add tensor shape annotation to each of the output tensor
             2.  What is the purpose of self_attn_mask? 
+                This ensures that the decoder simply does not look ahead and makes the transformer behave like a Seq2Seq model.
             3.  Why do we need it in the decoder but not in the encoder?
+                In the decoder, we want to predict P(y_t | x_0, ..., x_{t}), so the decoder cannot look at future inputs.
+                For encoders, we want the output contexts at each time t to contain information about the entire input sequence.
             4.  Why do we not need a mask for incremental decoding?
+                Incremental decoding only uses the previous context as well as the previous output token and does not take the
+                encoded contexts directly as input.
             '''
             self_attn_mask = self.buffered_future_mask(forward_state) if incremental_state is None else None
+            # self_attn_mask.size = [tgt_time_steps, tgt_time_steps]
             '''
             ___QUESTION-6-DESCRIBE-B-END___
             '''
@@ -215,8 +226,12 @@ class TransformerDecoder(Seq2SeqDecoder):
         if not features_only:
             '''
             ___QUESTION-6-DESCRIBE-C-START___
-            1.  Why do we need a linear projection after the decoder layers? 
+            1.  Why do we need a linear projection after the decoder layers?
+                We need this to project the embeddings to the vocabulary space.
             2.  What would the output represent if features_only=True?
+                The output would be the decoded contexts that would be passed to another decoder transformer block.
+                If features_only is False, then we take these context vectors and project the embedding dimension to the vocabulary space.
+                From there, we can perform softmax to get the distribution of potential output tokens.
             '''
             forward_state = self.embed_out(forward_state)
             '''

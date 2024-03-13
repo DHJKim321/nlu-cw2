@@ -308,16 +308,14 @@ class LSTMDecoder(Seq2SeqDecoder):
         '''
         ___QUESTION-1-DESCRIBE-C-START___
         1.  When is cached_state == None?
-            When incremental_state is None or the full key is not in the incremental_state.
-            Therefore, this is either when the dictionary 'INCREMENTAL_STATE_INSTANCE_ID' is 
-            None (which is impossible as we initialise it in utils.py) 
-            or when the full key is not in the dictionary.
-            When the full key is not in the dictionary, this means that the model has been initialised
-            but not trained yet.
+            This is either when the dictionary 'INCREMENTAL_STATE_INSTANCE_ID' is 
+            None (which is impossible as we initialise it in utils.py) or when the full key is not in the dictionary.
+            Therefore, this occurs before the decoder starts producing outputs when we perform incremental decoding.
+            I.e., when the model predicts the first word.
         2.  What role does input_feed play?
             input_feed is the previous output embedding vector.
             We concatenate this to the current input embedding vector to keep track of the 
-            current 'state' of the translation.
+            current 'state' of the translation by looking at the previous output.
         '''
         cached_state = utils.get_incremental_state(self, incremental_state, 'cached_state')
         if cached_state is not None:
@@ -366,8 +364,8 @@ class LSTMDecoder(Seq2SeqDecoder):
 
                 if self.use_lexical_model:
                     # __QUESTION-5: Compute and collect LEXICAL MODEL context vectors here
-                    weighted_average = step_attn_weights.squeeze() * src_embeddings[:, j, :].squeeze()
-                    lexical_contexts.append(weighted_average)
+                    weighted_average = torch.sum(step_attn_weights.unsqueeze(dim=-1) * src_embeddings.transpose(0, 1), dim=1).unsqueeze(dim=1)
+                    lexical_contexts.append(torch.tanh(weighted_average))
 
             input_feed = F.dropout(input_feed, p=self.dropout_out, training=self.training)
             rnn_outputs.append(input_feed)
@@ -388,10 +386,8 @@ class LSTMDecoder(Seq2SeqDecoder):
 
         if self.use_lexical_model:
             # __QUESTION-5: Incorporate the LEXICAL MODEL into the prediction of target tokens here
-            final_average = src_embeddings[:, 0, :].data.new(batch_size, 1, self.embed_dim).zero_()
-            for lexical_context in lexical_contexts:
-                final_average += lexical_context
-            decoder_output += self.final_lexical_layer(self.lexical_layer(torch.tanh(final_average)))
+            lexical_context = self.lexical_layer(torch.tanh(lexical_contexts[-1]))
+            decoder_output += self.final_lexical_layer(lexical_context)
 
         return decoder_output, attn_weights
 

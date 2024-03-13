@@ -30,7 +30,10 @@ class TransformerEncoderLayer(nn.Module):
 
         '''
         ___QUESTION-6-DESCRIBE-D-START___
-        1.  What is the purpose of encoder_padding_mask? 
+        1.  What is the purpose of encoder_padding_mask?
+            The encoder padding mask ensures that the mask is set to -inf for any padding tokens.
+            Therefore, the final attention weights for each padding will be -inf, which in turn means that
+            the encoder does not attend to these tokens when calculating the encoded contexts.
         '''
         state, _ = self.self_attn(query=state, key=state, value=state, key_padding_mask=encoder_padding_mask)
         '''
@@ -111,9 +114,17 @@ class TransformerDecoderLayer(nn.Module):
         residual = state.clone()
         '''
         ___QUESTION-6-DESCRIBE-E-START___
-        1.  How does encoder attention differ from self attention? 
-        2.  What is the difference between key_padding_mask and attn_mask? 
+        1.  How does encoder attention differ from self attention?
+            In self attention, the sizes of q, k, v are the same as they come from the same place
+            (output of the previous encoder block).
+            On the other hand, in encoder-decoder attention, 
+            q comes from the previous decoder layer, while k and v comes from the output of the encoder.
+        2.  What is the difference between key_padding_mask and attn_mask?
+            attn_mask deals with limiting the model's knowledge of future tokens. I.e., limiting leftward information flow.
+            Whereas, key_padding_mask deals with masking the attention given to the padding tokens.
         3.  If you understand this difference, then why don't we need to give attn_mask here?
+            Since we are dealing with contexts passed from the encoder, 
+            we do not want to limit leftward information flow. Therefore, we want each target token to interact with all source tokens.
         '''
         state, attn = self.encoder_attn(query=state,
                                         key=encoder_out,
