@@ -279,9 +279,8 @@ class LSTMDecoder(Seq2SeqDecoder):
         self.use_lexical_model = use_lexical_model
         if self.use_lexical_model:
             # __QUESTION-5: Add parts of decoder architecture corresponding to the LEXICAL MODEL here
-            # TODO: --------------------------------------------------------------------- CUT
-            pass
-            # TODO: --------------------------------------------------------------------- /CUT
+            self.lexical_layer = nn.Linear(embed_dim, hidden_size)
+            self.final_lexical_layer = nn.Linear(hidden_size, len(dictionary))
 
     def forward(self, tgt_inputs, encoder_out, incremental_state=None):
         """ Performs the forward pass through the instantiated model. """
@@ -367,9 +366,8 @@ class LSTMDecoder(Seq2SeqDecoder):
 
                 if self.use_lexical_model:
                     # __QUESTION-5: Compute and collect LEXICAL MODEL context vectors here
-                    # TODO: --------------------------------------------------------------------- CUT
-                    pass
-                    # TODO: --------------------------------------------------------------------- /CUT
+                    weighted_average = step_attn_weights.squeeze() * src_embeddings[:, j, :].squeeze()
+                    lexical_contexts.append(weighted_average)
 
             input_feed = F.dropout(input_feed, p=self.dropout_out, training=self.training)
             rnn_outputs.append(input_feed)
@@ -390,9 +388,10 @@ class LSTMDecoder(Seq2SeqDecoder):
 
         if self.use_lexical_model:
             # __QUESTION-5: Incorporate the LEXICAL MODEL into the prediction of target tokens here
-            # TODO: --------------------------------------------------------------------- CUT
-            pass
-            # TODO: --------------------------------------------------------------------- /CUT
+            final_average = src_embeddings[:, 0, :].data.new(batch_size, 1, self.embed_dim).zero_()
+            for lexical_context in lexical_contexts:
+                final_average += lexical_context
+            decoder_output += self.final_lexical_layer(self.lexical_layer(torch.tanh(final_average)))
 
         return decoder_output, attn_weights
 
