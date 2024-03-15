@@ -225,16 +225,12 @@ class AttentionLayer(nn.Module):
         '''
 
         projected_encoder_out = self.src_projection(encoder_out).transpose(2, 1)
-        # encoder_out = [src_time_steps, batch_size, output_dims]
-        # projected_encoder_out.size = [src_time_steps, output_dims, batch_size]
+        # encoder_out.size = [batch_size, src_time_steps, output_dims]
+        # projected_encoder_out.size = [batch_size, output_dims, src_time_steps]
 
         attn_scores = torch.bmm(tgt_input.unsqueeze(dim=1), projected_encoder_out)
-        # [             src_time_steps, output_dims, batch_size]
-        # [batch_size,      1,          input_dims              ]
-        # [batch_size, src_time_steps, batch_size]
-
-        # tgt_input.unsqueeze(dim=1).size = [batch_size, 1, input_dims]
-        # attn_scores.size = [batch_size, src_time_steps, batch_size]
+        # tgt_input.unsqueeze(dim=1).size = [batch_size, 1, src_time_steps]
+        # attn_scores.size = [batch_size, 1, src_time_steps]
         '''___QUESTION-1-DESCRIBE-B-END___'''
 
         return attn_scores
@@ -364,8 +360,23 @@ class LSTMDecoder(Seq2SeqDecoder):
 
                 if self.use_lexical_model:
                     # __QUESTION-5: Compute and collect LEXICAL MODEL context vectors here
-                    weighted_average = torch.sum(step_attn_weights.unsqueeze(dim=-1) * src_embeddings.transpose(0, 1), dim=1).unsqueeze(dim=1)
-                    lexical_contexts.append(torch.tanh(weighted_average))
+                    # step_attn_weights.size = [batch_size, src_time_steps]
+                    # src_embeddings.transpose(0, 1).size = [src_time_steps, batch_size, self.embed_dims] -> [batch_size, src_time_steps, self.embed_dims]
+                    transposed_src_embeddings = src_embeddings.transpose(0, 1)
+
+                    # Extra dimension to broadcast to src_embeddings (I.e., multiply the weight to each value in the embedding vector)
+                    extended_step_attn_weights = step_attn_weights.unsqueeze(dim=-1)
+                    # extended_step_attn_weights.size = [batch_size, src_time_steps, 1]
+
+                    weighted_embeddings = extended_step_attn_weights * transposed_src_embeddings
+                    # weighted_embeddings.size = [batch_size, src_time_steps, self.embed_dims]
+
+                    summed_weighted_embeddings = torch.sum(weighted_embeddings, dim=1)
+                    # summed_weighted_embeddings.size = [batch_size, self.embed_dims]
+
+                    f_t = torch.tanh(summed_weighted_embeddings)
+                    # f_t.size = [batch_size, self.embed_dims]
+                    lexical_contexts.append(f_t)
 
             input_feed = F.dropout(input_feed, p=self.dropout_out, training=self.training)
             rnn_outputs.append(input_feed)
@@ -386,8 +397,11 @@ class LSTMDecoder(Seq2SeqDecoder):
 
         if self.use_lexical_model:
             # __QUESTION-5: Incorporate the LEXICAL MODEL into the prediction of target tokens here
-            lexical_context = self.lexical_layer(torch.tanh(lexical_contexts[-1]))
-            decoder_output += self.final_lexical_layer(lexical_context)
+            for j in range(tgt_time_steps):
+                f_t = lexical_contexts[j]
+                h_t = torch.tanh(self.lexical_layer(f_t))
+                final_projection = self.final_lexical_layer(h_t)
+                decoder_output[:, j, :] += final_projection
 
         return decoder_output, attn_weights
 
