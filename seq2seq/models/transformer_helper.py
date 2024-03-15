@@ -218,10 +218,27 @@ class MultiHeadAttention(nn.Module):
         # attn must be size [tgt_time_steps, batch_size, embed_dim]
         # attn_weights is the combined output of h parallel heads of Attention(Q,K,V) in Vaswani et al. 2017
         # attn_weights must be size [num_heads, batch_size, tgt_time_steps, key.size(0)]
-        # TODO: REPLACE THESE LINES WITH YOUR IMPLEMENTATION ------------------------ CUT
         attn = torch.zeros(size=(tgt_time_steps, batch_size, embed_dim))
-        attn_weights = torch.zeros(size=(self.num_heads, batch_size, tgt_time_steps, -1)) if need_weights else None
-        # TODO: --------------------------------------------------------------------- CUT
+        attn_weights = torch.zeros(size=(self.num_heads, batch_size, tgt_time_steps, key.size(0))) if need_weights else None
+    
+        # Iterate over self.num_heads (?)
+
+        # First need to perform linear projection of Q, K, and V
+        projected_q = self.q_proj(query)
+        # projected_q.size = [tgt_time_steps, batch_size, self.k_embed_size]
+        projected_k = self.k_proj(key)
+        # projected_k.size = [tgt_time_steps, batch_size, self.k_embed_size]
+        projected_v = self.v_proj(value)
+        # projected_v.size = [tgt_time_steps, batch_size, self.v_embed_size]
+
+        # Calculate attn_weights
+        batch_projected_q = projected_q.transpose(0, 1)
+        batch_projected_k = projected_k.transpose(0, 1).transpose(1, 2)
+        dot_product = torch.bmm(batch_projected_q, batch_projected_k)
+
+        # Calculate attn (concat attn_weights then multiply by self.out_proj)
+        # concat could be .flatten(dim=0)
+
 
         '''
         ___QUESTION-7-MULTIHEAD-ATTENTION-END
