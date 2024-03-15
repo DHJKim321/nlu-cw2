@@ -214,31 +214,103 @@ class MultiHeadAttention(nn.Module):
         be expected if attn_mask or key_padding_mask are given?
         '''
 
+        # Possible edge cases:
+        # Empty sequence
+        # Exceeded input length
+        # ?
+
+        src_time_steps = key.size(0)
+
         # attn is the output of MultiHead(Q,K,V) in Vaswani et al. 2017
         # attn must be size [tgt_time_steps, batch_size, embed_dim]
         # attn_weights is the combined output of h parallel heads of Attention(Q,K,V) in Vaswani et al. 2017
-        # attn_weights must be size [num_heads, batch_size, tgt_time_steps, key.size(0)]
+        # attn_weights must be size [num_heads, batch_size, tgt_time_steps, self.head_embed_size]
         attn = torch.zeros(size=(tgt_time_steps, batch_size, embed_dim))
-        attn_weights = torch.zeros(size=(self.num_heads, batch_size, tgt_time_steps, key.size(0))) if need_weights else None
-    
-        # Iterate over self.num_heads (?)
+        attn_weights = torch.zeros(size=(self.num_heads, batch_size, tgt_time_steps, self.head_embed_size)) if need_weights else None
 
         # First need to perform linear projection of Q, K, and V
         projected_q = self.q_proj(query)
-        # projected_q.size = [tgt_time_steps, batch_size, self.k_embed_size]
+        # query.size = [tgt_time_steps, batch_size, self.embed_dim]
+        # If self-attention:
+        #   self.q_proj = [self.embed_dim, self.embed_dim]
+        #   projected_q.size = [tgt_time_steps, batch_size, self.embed_dim]
+        # Else if cross-attention:
+        #   self.q_proj = [self.k_embed_size, self.embed_dim]
+        #   projected_q.size = [tgt_time_steps, batch_size, self.embed_dim]
+
+        # Similarly:
         projected_k = self.k_proj(key)
-        # projected_k.size = [tgt_time_steps, batch_size, self.k_embed_size]
+        # projected_k.size = [src_time_steps, batch_size, self.embed_dim]
         projected_v = self.v_proj(value)
-        # projected_v.size = [tgt_time_steps, batch_size, self.v_embed_size]
+        # projected_v.size = [src_time_steps, batch_size, self.embed_dim]
 
-        # Calculate attn_weights
-        batch_projected_q = projected_q.transpose(0, 1)
-        batch_projected_k = projected_k.transpose(0, 1).transpose(1, 2)
-        dot_product = torch.bmm(batch_projected_q, batch_projected_k)
+        # Split projected q, k, v into self.num_heads heads
 
-        # Calculate attn (concat attn_weights then multiply by self.out_proj)
-        # concat could be .flatten(dim=0)
+        reshaped_projected_q = projected_q.reshape(batch_size, tgt_time_steps, self.num_heads, self.head_embed_size)
+        reshaped_projected_k = projected_k.reshape(batch_size, src_time_steps, self.num_heads, self.head_embed_size)
+        reshaped_projected_v = projected_v.reshape(batch_size, src_time_steps, self.num_heads, self.head_embed_size)
+        
+        head_projected_q = reshaped_projected_q.transpose(1, 2)
+        # head_projected_q.size = [batch_size, self.num_heads, tgt_time_steps, self.head_embed_size]
 
+        head_projected_k = reshaped_projected_k.transpose(1, 2)
+        # head_projected_k.size = [batch_size, self.num_heads, src_time_steps, self.head_embed_size]
+
+        head_projected_v = reshaped_projected_v.transpose(1, 2)
+        # head_projected_v.size = [batch_size, self.num_heads, src_time_steps, self.head_embed_size]
+    
+        # Iterate over each head
+        for h in range(self.num_heads):
+            individual_head_q = head_projected_q[:, h, :, :].squeeze(dim=1)
+            # individual_head_q.size = [batch_size, tgt_time_steps, self.head_embed_size]
+            individual_head_k = head_projected_k[:, h, :, :].squeeze(dim=1)
+            # individual_head_k.size = [batch_size, src_time_steps, self.head_embed_size]
+            individual_head_v = head_projected_v[:, h, :, :].squeeze(dim=1)
+            # individual_head_v.size = [batch_size, src_time_steps, self.head_embed_size]
+
+            # Calculating attention score for each head
+
+
+            transposed_individual_head_k = individual_head_k.transpose(1, 2)
+            # transposed_individual_head_k.size = [batch_size, self.head_embed_size, src_time_steps]
+            raw_score = torch.bmm(individual_head_q, transposed_individual_head_k)
+            # raw_score.size = [batch_size, tgt_time_steps, src_time_steps]
+            raw_score /= self.head_scaling
+            # Keeps the same dimension as we are dividing by a scalar
+
+            # Check whether there are padding tokens
+            if key_padding_mask is not None:
+                for b in range(batch_size):
+                    for t in range(tgt_time_steps):
+                        if key_padding_mask[b, t]:
+                            raw_score[b, t, :] = 0
+
+            # Check whether we need to limit leftward information flow
+            if attn_mask is not None:
+                for b in range(batch_size):
+                    for t in range(tgt_time_steps):
+                        if key_padding_mask[b, t]:
+                            raw_score[b, t, :] = attn_mask[b, t]
+
+            softmax_score = torch.softmax(raw_score, dim=1)
+            # softmax_score.size = [batch_size, tgt_time_steps, src_time_steps]
+
+            attention_h = torch.bmm(softmax_score, individual_head_v)
+            # attention_h.size = [batch_size, tgt_time_steps, self.head_embed_size]
+            print(attn_weights)
+            attn_weights[h, :, :, :] = attention_h
+
+        # Calculate attn
+        transposed_attn_weights = attn_weights.transpose(0, 2)
+        # transposed_attn_weights.size = [tgt_time_steps, batch_size, self.num_heads, self.head_embed_size]
+
+        reshaped_attn_weights = transposed_attn_weights.reshape(tgt_time_steps, batch_size, self.num_heads * self.head_embed_size)
+        # reshaped_attn_weights.size = [tgt_time_steps, batch_size, self.embed_dim]
+
+        final_projected = self.out_proj(reshaped_attn_weights)
+        # final_projected.size = [tgt_time_steps, batch_size, self.embed_dim]
+
+        attn += final_projected
 
         '''
         ___QUESTION-7-MULTIHEAD-ATTENTION-END
