@@ -214,11 +214,6 @@ class MultiHeadAttention(nn.Module):
         be expected if attn_mask or key_padding_mask are given?
         '''
 
-        # Possible edge cases:
-        # Empty sequence
-        # Exceeded input length
-        # ?
-
         src_time_steps = key.size(0)
 
         # attn is the output of MultiHead(Q,K,V) in Vaswani et al. 2017
@@ -227,6 +222,11 @@ class MultiHeadAttention(nn.Module):
         # attn_weights must be size [num_heads, batch_size, tgt_time_steps, self.head_embed_size]
         attn = torch.zeros(size=(tgt_time_steps, batch_size, embed_dim))
         attn_weights = torch.zeros(size=(self.num_heads, batch_size, tgt_time_steps, self.head_embed_size)) if need_weights else None
+
+        # If need_weights=False. I.e., the model attends to each input token uniformly for each output representation.
+        if not need_weights:
+            attn += torch.ones(size=(tgt_time_steps, batch_size, embed_dim))
+            return attn, attn_weights
 
         # First need to perform linear projection of Q, K, and V
         projected_q = self.q_proj(query)
@@ -247,25 +247,26 @@ class MultiHeadAttention(nn.Module):
         # Split projected q, k, v into self.num_heads heads
 
         reshaped_projected_q = projected_q.reshape(batch_size, tgt_time_steps, self.num_heads, self.head_embed_size)
+        # reshaped_projected_q.size = [batch_size, tgt_time_steps, self.num_heads, self.head_embed_size]
         reshaped_projected_k = projected_k.reshape(batch_size, src_time_steps, self.num_heads, self.head_embed_size)
+        # reshaped_projected_k.size = [batch_size, src_time_steps, self.num_heads, self.head_embed_size]
         reshaped_projected_v = projected_v.reshape(batch_size, src_time_steps, self.num_heads, self.head_embed_size)
+        # reshaped_projected_v.size = [batch_size, src_time_steps, self.num_heads, self.head_embed_size]
         
         head_projected_q = reshaped_projected_q.transpose(1, 2)
         # head_projected_q.size = [batch_size, self.num_heads, tgt_time_steps, self.head_embed_size]
-
         head_projected_k = reshaped_projected_k.transpose(1, 2)
         # head_projected_k.size = [batch_size, self.num_heads, src_time_steps, self.head_embed_size]
-
         head_projected_v = reshaped_projected_v.transpose(1, 2)
         # head_projected_v.size = [batch_size, self.num_heads, src_time_steps, self.head_embed_size]
-    
+
         # Iterate over each head
         for h in range(self.num_heads):
-            individual_head_q = head_projected_q[:, h, :, :].squeeze(dim=1)
+            individual_head_q = head_projected_q[:, h, :, :]
             # individual_head_q.size = [batch_size, tgt_time_steps, self.head_embed_size]
-            individual_head_k = head_projected_k[:, h, :, :].squeeze(dim=1)
+            individual_head_k = head_projected_k[:, h, :, :]
             # individual_head_k.size = [batch_size, src_time_steps, self.head_embed_size]
-            individual_head_v = head_projected_v[:, h, :, :].squeeze(dim=1)
+            individual_head_v = head_projected_v[:, h, :, :]
             # individual_head_v.size = [batch_size, src_time_steps, self.head_embed_size]
 
             # Calculating attention score for each head
@@ -283,7 +284,8 @@ class MultiHeadAttention(nn.Module):
                 for b in range(batch_size):
                     for t in range(tgt_time_steps):
                         if key_padding_mask[b, t]:
-                            raw_score[b, t, :] = 0
+                            raw_score[b, t, :] = float('-inf')
+                            # raw_score[b, t, :].size = [src_time_steps]
 
             # Check whether we need to limit leftward information flow
             if attn_mask is not None:
@@ -291,14 +293,16 @@ class MultiHeadAttention(nn.Module):
                     for t in range(tgt_time_steps):
                         if key_padding_mask[b, t]:
                             raw_score[b, t, :] = attn_mask[b, t]
+                            # raw_score[b, t, :].size = [src_time_steps]
 
             softmax_score = torch.softmax(raw_score, dim=1)
             # softmax_score.size = [batch_size, tgt_time_steps, src_time_steps]
 
             attention_h = torch.bmm(softmax_score, individual_head_v)
             # attention_h.size = [batch_size, tgt_time_steps, self.head_embed_size]
-            print(attn_weights)
+
             attn_weights[h, :, :, :] = attention_h
+            # attn_weights[h, :, :, :].size = [batch_size, tgt_time_steps, self.head_embed_size]
 
         # Calculate attn
         transposed_attn_weights = attn_weights.transpose(0, 2)

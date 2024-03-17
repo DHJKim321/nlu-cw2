@@ -15,3 +15,8 @@ Lexical Encoding
 INFO: Epoch 046: loss 1.916 | lr 0.0003 | num_tokens 13.4 | batch_size 10 | grad_norm 29.03 | clip 0.998
 INFO: Epoch 046: valid_loss 3.19 | num_tokens 13.8 | batch_size 500 | valid_perplexity 24.3
 BLEU = 13.06, 43.7/17.1/8.6/4.8 (BP=0.983, ratio=0.983, hyp_len=6190, ref_len=6295)
+
+Transformers
+==============================================================================================================================
+INFO: Epoch 018: loss 3.217 | lr 0.0003 | num_tokens 13.51 | batch_size 10 | grad_norm 29.86 | clip 1
+INFO: Epoch 018: valid_loss 5.27 | num_tokens 13.8 | batch_size 500 | valid_perplexity 195
