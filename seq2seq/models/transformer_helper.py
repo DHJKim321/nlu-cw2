@@ -219,9 +219,9 @@ class MultiHeadAttention(nn.Module):
         # attn is the output of MultiHead(Q,K,V) in Vaswani et al. 2017
         # attn must be size [tgt_time_steps, batch_size, embed_dim]
         # attn_weights is the combined output of h parallel heads of Attention(Q,K,V) in Vaswani et al. 2017
-        # attn_weights must be size [num_heads, batch_size, tgt_time_steps, self.head_embed_size]
+        # attn_weights must be size [num_heads, batch_size, tgt_time_steps, src_time_steps]
         attn = torch.zeros(size=(tgt_time_steps, batch_size, embed_dim))
-        attn_weights = torch.zeros(size=(self.num_heads, batch_size, tgt_time_steps, self.head_embed_size)) if need_weights else None
+        attn_weights = torch.zeros(size=(self.num_heads, batch_size, tgt_time_steps, src_time_steps)) if need_weights else None
 
         # If need_weights=False. I.e., the model attends to each input token uniformly for each output representation.
         if not need_weights:
@@ -252,69 +252,90 @@ class MultiHeadAttention(nn.Module):
         # reshaped_projected_k.size = [batch_size, src_time_steps, self.num_heads, self.head_embed_size]
         reshaped_projected_v = projected_v.reshape(batch_size, src_time_steps, self.num_heads, self.head_embed_size)
         # reshaped_projected_v.size = [batch_size, src_time_steps, self.num_heads, self.head_embed_size]
-        
+
         head_projected_q = reshaped_projected_q.transpose(1, 2)
         # head_projected_q.size = [batch_size, self.num_heads, tgt_time_steps, self.head_embed_size]
         head_projected_k = reshaped_projected_k.transpose(1, 2)
         # head_projected_k.size = [batch_size, self.num_heads, src_time_steps, self.head_embed_size]
         head_projected_v = reshaped_projected_v.transpose(1, 2)
         # head_projected_v.size = [batch_size, self.num_heads, src_time_steps, self.head_embed_size]
+    
+        batched_q = head_projected_q.reshape(batch_size * self.num_heads, tgt_time_steps, self.head_embed_size)
+        # batched_q.size = [batch_size * self.num_heads, tgt_time_steps, self.head_embed_size]
+        batched_k = head_projected_k.reshape(batch_size * self.num_heads, src_time_steps, self.head_embed_size)
+        # batched_k.size = [batch_size * self.num_heads, src_time_steps, self.head_embed_size]
+        batched_v = head_projected_v.reshape(batch_size * self.num_heads, src_time_steps, self.head_embed_size)
+        # batched_v.size = [batch_size * self.num_heads, src_time_steps, self.head_embed_size]
 
-        # Iterate over each head
-        for h in range(self.num_heads):
-            individual_head_q = head_projected_q[:, h, :, :]
-            # individual_head_q.size = [batch_size, tgt_time_steps, self.head_embed_size]
-            individual_head_k = head_projected_k[:, h, :, :]
-            # individual_head_k.size = [batch_size, src_time_steps, self.head_embed_size]
-            individual_head_v = head_projected_v[:, h, :, :]
-            # individual_head_v.size = [batch_size, src_time_steps, self.head_embed_size]
+        # Calculate the attention weights
+        transposed_batched_k = batched_k.transpose(1, 2)
+        # transposed_batched_k.size = [batch_size * self.num_heads, self.head_embed_size, src_time_steps]
 
-            # Calculating attention score for each head
+        raw_scores = torch.bmm(batched_q, transposed_batched_k)
+        # raw_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
 
+        scaled_scores = raw_scores / self.head_scaling
+        # scaled_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
 
-            transposed_individual_head_k = individual_head_k.transpose(1, 2)
-            # transposed_individual_head_k.size = [batch_size, self.head_embed_size, src_time_steps]
-            raw_score = torch.bmm(individual_head_q, transposed_individual_head_k)
-            # raw_score.size = [batch_size, tgt_time_steps, src_time_steps]
-            raw_score /= self.head_scaling
-            # Keeps the same dimension as we are dividing by a scalar
+        batched_softmax_scores = F.softmax(scaled_scores, dim=2)
+        # batched_softmax_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
 
-            # Check whether there are padding tokens
-            if key_padding_mask is not None:
-                for b in range(batch_size):
-                    for t in range(tgt_time_steps):
-                        if key_padding_mask[b, t]:
-                            raw_score[b, t, :] = float('-inf')
-                            # raw_score[b, t, :].size = [src_time_steps]
+        softmax_scores = batched_softmax_scores.reshape(batch_size, self.num_heads, tgt_time_steps, src_time_steps)
+        # softmax_scores.size = [batch_size, self.num_heads, tgt_time_steps, src_time_steps]
 
-            # Check whether we need to limit leftward information flow
-            if attn_mask is not None:
-                for b in range(batch_size):
-                    for t in range(tgt_time_steps):
-                        if key_padding_mask[b, t]:
-                            raw_score[b, t, :] = attn_mask[b, t]
-                            # raw_score[b, t, :].size = [src_time_steps]
+        transposed_softmax_scores = softmax_scores.transpose(0, 1)
+        # transposed_softmax_scores.size = [self.num_heads, batch_size, tgt_time_steps, src_time_steps]
 
-            softmax_score = torch.softmax(raw_score, dim=1)
-            # softmax_score.size = [batch_size, tgt_time_steps, src_time_steps]
+        if attn_mask is not None:
+            # This assumes that attn_mask is a 2D tensor with boolean values of shape [tgt_time_steps, src_time_steps]
+            attn_mask = attn_mask.unsqueeze(dim=0)
+            # attn_mask.size = [1, tgt_time_steps, src_time_steps]
+            attn_mask = attn_mask.unsqueeze(dim=0)
+            # attn_mask.size = [1, 1, tgt_time_steps, src_time_steps]
+            attn_mask = attn_mask.expand(self.num_heads, batch_size, tgt_time_steps, src_time_steps)
+            # attn_mask.size = [self.num_heads, batch_size, tgt_time_steps, src_time_steps]
+            transposed_softmax_scores = transposed_softmax_scores.masked_fill(attn_mask, float('-inf'))
+            # transposed_softmax_scores.size = [self.num_heads, batch_size, tgt_time_steps, src_time_steps]
 
-            attention_h = torch.bmm(softmax_score, individual_head_v)
-            # attention_h.size = [batch_size, tgt_time_steps, self.head_embed_size]
+        if key_padding_mask is not None:
+            padding_mask = key_padding_mask.unsqueeze(dim=0)
+            # padding_mask.size = [1, batch_size, src_time_steps]
+            padding_mask = padding_mask.unsqueeze(dim=2)
+            # padding_mask.size = [1, batch_size, 1, src_time_steps]
+            padding_mask = padding_mask.expand(self.num_heads, batch_size, tgt_time_steps, src_time_steps)
+            # padding_mask.size = [self.num_heads, batch_size, tgt_time_steps, src_time_steps]
+            transposed_softmax_scores = transposed_softmax_scores.masked_fill(padding_mask, float('-inf'))
+            # transposed_softmax_scores.size = [self.num_heads, batch_size, tgt_time_steps, src_time_steps]
 
-            attn_weights[h, :, :, :] = attention_h
-            # attn_weights[h, :, :, :].size = [batch_size, tgt_time_steps, self.head_embed_size]
+        attn_weights += transposed_softmax_scores
+        # attn_weights.size = [self.num_heads, batch_size, tgt_time_steps, src_time_steps]
 
-        # Calculate attn
-        transposed_attn_weights = attn_weights.transpose(0, 2)
-        # transposed_attn_weights.size = [tgt_time_steps, batch_size, self.num_heads, self.head_embed_size]
+        transposed_attn_weights = attn_weights.transpose(0, 1)
+        # transposed_attn_weights.size = [batch_size, self.num_heads, tgt_time_steps, src_time_steps]
 
-        reshaped_attn_weights = transposed_attn_weights.reshape(tgt_time_steps, batch_size, self.num_heads * self.head_embed_size)
-        # reshaped_attn_weights.size = [tgt_time_steps, batch_size, self.embed_dim]
+        batched_attn_weights = transposed_attn_weights.reshape(batch_size * self.num_heads, tgt_time_steps, src_time_steps)
+        # batched_attn_weights.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
 
-        final_projected = self.out_proj(reshaped_attn_weights)
-        # final_projected.size = [tgt_time_steps, batch_size, self.embed_dim]
+        batched_attn = torch.bmm(batched_attn_weights, batched_v)
+        # batched_attn.size = [batch_size * self.num_heads, tgt_time_steps, self.head_embed_size]
 
-        attn += final_projected
+        temp_attn = batched_attn.reshape(batch_size, self.num_heads, tgt_time_steps, self.head_embed_size)
+        # temp_attn.size = [batch_size, self.num_heads, tgt_time_steps, self.head_embed_size]
+
+        transposed_attn = temp_attn.transpose(1, 2)
+        # transposed_attn.size = [batch_size, tgt_time_steps, self.num_heads, self.head_embed_size]
+
+        concat_attn = transposed_attn.reshape(batch_size, tgt_time_steps, self.embed_dim)
+        # concat_attn.size = [batch_size, tgt_time_steps, self.embed_dim]
+
+        final_projected_attn = self.out_proj(concat_attn)
+        # final_projected_attn.size = [batch_size, tgt_time_steps, self.embed_dim]
+
+        transposed_projected_attn = final_projected_attn.transpose(0, 1)
+        # transposed_projected_attn.size = [tgt_time_steps, batch_size, self.embed_dim]
+
+        attn += transposed_projected_attn
+        # attn.size = [tgt_time_steps, batch_size, self.embed_dim]
 
         '''
         ___QUESTION-7-MULTIHEAD-ATTENTION-END
