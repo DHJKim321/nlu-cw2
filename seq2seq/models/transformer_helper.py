@@ -315,6 +315,7 @@ class MultiHeadAttention(nn.Module):
         # transposed_attn_weights.size = [batch_size, self.num_heads, tgt_time_steps, src_time_steps]
 
         # Merge num heads with batch size to perform parallel computation of each attention head.
+        # I.e., treat each x in batch*self.num_heads as its own batch.
         batched_attn_weights = transposed_attn_weights.reshape(batch_size * self.num_heads, tgt_time_steps, src_time_steps)
         # batched_attn_weights.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
 
