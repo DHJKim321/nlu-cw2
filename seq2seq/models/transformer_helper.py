@@ -244,13 +244,21 @@ class MultiHeadAttention(nn.Module):
         projected_v = self.v_proj(value)
         # projected_v.size = [src_time_steps, batch_size, self.embed_dim]
 
+        # Reshape projected q, k, v into [batch_size, time_steps, self.embed_dim]
+        reshaped_projected_q = projected_q.reshape(batch_size, tgt_time_steps, self.embed_dim)
+        # reshaped_projected_q.size = [batch_size, tgt_time_steps, self.embed_dim]
+        reshaped_projected_k = projected_k.reshape(batch_size, src_time_steps, self.embed_dim)
+        # reshaped_projected_k.size = [batch_size, src_time_steps, self.embed_dim]
+        reshaped_projected_v = projected_v.reshape(batch_size, src_time_steps, self.embed_dim)
+        # reshaped_projected_v.size = [batch_size, src_time_steps, self.embed_dim]
+
         # Split projected q, k, v into self.num_heads heads
 
-        reshaped_projected_q = projected_q.reshape(batch_size, tgt_time_steps, self.num_heads, self.head_embed_size)
+        reshaped_projected_q = reshaped_projected_q.reshape(batch_size, tgt_time_steps, self.num_heads, self.head_embed_size)
         # reshaped_projected_q.size = [batch_size, tgt_time_steps, self.num_heads, self.head_embed_size]
-        reshaped_projected_k = projected_k.reshape(batch_size, src_time_steps, self.num_heads, self.head_embed_size)
+        reshaped_projected_k = reshaped_projected_k.reshape(batch_size, src_time_steps, self.num_heads, self.head_embed_size)
         # reshaped_projected_k.size = [batch_size, src_time_steps, self.num_heads, self.head_embed_size]
-        reshaped_projected_v = projected_v.reshape(batch_size, src_time_steps, self.num_heads, self.head_embed_size)
+        reshaped_projected_v = reshaped_projected_v.reshape(batch_size, src_time_steps, self.num_heads, self.head_embed_size)
         # reshaped_projected_v.size = [batch_size, src_time_steps, self.num_heads, self.head_embed_size]
 
         head_projected_q = reshaped_projected_q.transpose(1, 2)
@@ -260,6 +268,8 @@ class MultiHeadAttention(nn.Module):
         head_projected_v = reshaped_projected_v.transpose(1, 2)
         # head_projected_v.size = [batch_size, self.num_heads, src_time_steps, self.head_embed_size]
     
+        # Fold each head into the batch dimension
+        # I.e., Treat each x in batch*self.num_heads as its own batch.
         batched_q = head_projected_q.reshape(batch_size * self.num_heads, tgt_time_steps, self.head_embed_size)
         # batched_q.size = [batch_size * self.num_heads, tgt_time_steps, self.head_embed_size]
         batched_k = head_projected_k.reshape(batch_size * self.num_heads, src_time_steps, self.head_embed_size)
@@ -277,6 +287,39 @@ class MultiHeadAttention(nn.Module):
         scaled_scores = raw_scores / self.head_scaling
         # scaled_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
 
+        # If masks are provided:
+        # Mask value must be -inf for all values in the input of the softmax according to Vaswani et al. 2017.
+        # This ensures that the subsequent softmax operation will result in 0 for all masked values.
+
+        # attn_mask.size = [tgt_time_steps, tgt_time_steps], attn_mask.type = float (-inf)
+        # Decoder-only as we want to prevent leftward information flow.
+        # tgt_time_steps is a constant value (i.e., maximum input length for decoder transformer)
+        if attn_mask is not None:
+            attention_mask = attn_mask.unsqueeze(dim=0)
+            # attention_mask.size = [1, tgt_time_steps, tgt_time_steps]
+            attention_mask = attention_mask.unsqueeze(dim=0)
+            # attention_mask.size = [1, 1, tgt_time_steps, tgt_time_steps]
+            attention_mask = attention_mask.expand(batch_size, self.num_heads, tgt_time_steps, tgt_time_steps)
+            # attention_mask.size = [batch_size, self.num_heads, tgt_time_steps, tgt_time_steps]
+            attention_mask = attention_mask.reshape(batch_size * self.num_heads, tgt_time_steps, tgt_time_steps)
+            # attention_mask.size = [batch_size * self.num_heads, tgt_time_steps, tgt_time_steps]
+            scaled_scores += attention_mask
+            # scaled_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
+
+        # key_padding_mask.size = [batch_size, src_time_steps], key_padding_mask.type = Boolean
+        # True if padding, False if not padding.
+        if key_padding_mask is not None:
+            padding_mask = key_padding_mask.unsqueeze(dim=1)
+            # padding_mask.size = [batch_size, 1, src_time_steps]
+            padding_mask = padding_mask.unsqueeze(dim=1)
+            # padding_mask.size = [batch_size, 1, 1, src_time_steps]
+            padding_mask = padding_mask.expand(batch_size, self.num_heads, tgt_time_steps, src_time_steps)
+            # padding_mask.size = [batch_size, self.num_heads, tgt_time_steps, src_time_steps]
+            padding_mask = padding_mask.reshape(batch_size * self.num_heads, tgt_time_steps, src_time_steps)
+            # padding_mask.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
+            scaled_scores = scaled_scores.masked_fill(padding_mask, float('-inf'))
+            # transposed_softmax_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
+
         batched_softmax_scores = F.softmax(scaled_scores, dim=2)
         # batched_softmax_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
 
@@ -286,27 +329,6 @@ class MultiHeadAttention(nn.Module):
         transposed_softmax_scores = softmax_scores.transpose(0, 1)
         # transposed_softmax_scores.size = [self.num_heads, batch_size, tgt_time_steps, src_time_steps]
 
-        # if attn_mask is not None:
-        #     # This assumes that attn_mask is a 2D tensor with boolean values of shape [tgt_time_steps, src_time_steps]
-        #     attn_mask = attn_mask.unsqueeze(dim=0)
-        #     # attn_mask.size = [1, tgt_time_steps, src_time_steps]
-        #     attn_mask = attn_mask.unsqueeze(dim=0)
-        #     # attn_mask.size = [1, 1, tgt_time_steps, src_time_steps]
-        #     attn_mask = attn_mask.expand(self.num_heads, batch_size, tgt_time_steps, src_time_steps)
-        #     # attn_mask.size = [self.num_heads, batch_size, tgt_time_steps, src_time_steps]
-        #     transposed_softmax_scores = transposed_softmax_scores.masked_fill(attn_mask, float('-inf'))
-        #     # transposed_softmax_scores.size = [self.num_heads, batch_size, tgt_time_steps, src_time_steps]
-
-        # if key_padding_mask is not None:
-        #     padding_mask = key_padding_mask.unsqueeze(dim=0)
-        #     # padding_mask.size = [1, batch_size, src_time_steps]
-        #     padding_mask = padding_mask.unsqueeze(dim=2)
-        #     # padding_mask.size = [1, batch_size, 1, src_time_steps]
-        #     padding_mask = padding_mask.expand(self.num_heads, batch_size, tgt_time_steps, src_time_steps)
-        #     # padding_mask.size = [self.num_heads, batch_size, tgt_time_steps, src_time_steps]
-        #     transposed_softmax_scores = transposed_softmax_scores.masked_fill(padding_mask, float('-inf'))
-        #     # transposed_softmax_scores.size = [self.num_heads, batch_size, tgt_time_steps, src_time_steps]
-
         # If we use masks, transposed_softmax_scores should contain -inf values as well
         attn_weights += transposed_softmax_scores
         # attn_weights.size = [self.num_heads, batch_size, tgt_time_steps, src_time_steps]
@@ -315,7 +337,6 @@ class MultiHeadAttention(nn.Module):
         # transposed_attn_weights.size = [batch_size, self.num_heads, tgt_time_steps, src_time_steps]
 
         # Merge num heads with batch size to perform parallel computation of each attention head.
-        # I.e., treat each x in batch*self.num_heads as its own batch.
         batched_attn_weights = transposed_attn_weights.reshape(batch_size * self.num_heads, tgt_time_steps, src_time_steps)
         # batched_attn_weights.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
 
