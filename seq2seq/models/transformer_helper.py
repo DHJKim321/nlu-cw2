@@ -223,11 +223,6 @@ class MultiHeadAttention(nn.Module):
         attn = torch.zeros(size=(tgt_time_steps, batch_size, embed_dim))
         attn_weights = torch.zeros(size=(self.num_heads, batch_size, tgt_time_steps, src_time_steps)) if need_weights else None
 
-        # If need_weights=False. I.e., the model attends to each input token uniformly for each output representation.
-        if not need_weights:
-            attn += torch.ones(size=(tgt_time_steps, batch_size, embed_dim))
-            return attn, attn_weights
-
         # First need to perform linear projection of Q, K, and V
         projected_q = self.q_proj(query)
         # query.size = [tgt_time_steps, batch_size, self.embed_dim]
@@ -363,6 +358,9 @@ class MultiHeadAttention(nn.Module):
 
         attn += transposed_projected_attn
         # attn.size = [tgt_time_steps, batch_size, self.embed_dim]
+
+        if not need_weights:
+            attn_weights = None
 
         '''
         ___QUESTION-7-MULTIHEAD-ATTENTION-END
