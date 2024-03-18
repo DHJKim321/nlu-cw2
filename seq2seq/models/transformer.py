@@ -62,8 +62,8 @@ class TransformerEncoder(Seq2SeqEncoder):
     """ Defines an encoder class. """
 
     def __init__(self,
-                 args,
-                 dictionary):
+                args,
+                dictionary):
 
         super().__init__(dictionary)
 
@@ -99,7 +99,7 @@ class TransformerEncoder(Seq2SeqEncoder):
         2.  What is the purpose of the positional embeddings in the encoder and decoder? 
         Without positional embeddings, transformers are position invariant as we sum the attention-weighted input vectors.
         Therefore, we include an additional positional embedding to encode the 
-        positions of each word within the input to give more context to the model, 
+        positions of each word within the input to give more context to the model(I think 'to keep track of work order is more clear rather than 'to give more context), 
         which makes the model position equivariant but not invariant.
         '''
         embeddings += self.embed_positions(src_tokens)
@@ -132,8 +132,8 @@ class TransformerEncoder(Seq2SeqEncoder):
 class TransformerDecoder(Seq2SeqDecoder):
     """ Defines an decoder class. """
     def __init__(self,
-                 args,
-                 dictionary):
+                args,
+                dictionary):
 
         super().__init__(dictionary)
         self.dropout = args.dropout
@@ -198,7 +198,7 @@ class TransformerDecoder(Seq2SeqDecoder):
                 For encoders, we want the output contexts at each time t to contain information about the entire input sequence.
             4.  Why do we not need a mask for incremental decoding?
                 Incremental decoding only uses the previous context as well as the previous output token and does not take the
-                encoded contexts directly as input.
+                encoded contexts directly as input. (Should we say Incremental decoding only uses 'the previous output token as it does not use the previous context?)
             '''
             self_attn_mask = self.buffered_future_mask(forward_state) if incremental_state is None else None
             # self_attn_mask.size = [tgt_time_steps, tgt_time_steps]
@@ -207,11 +207,11 @@ class TransformerDecoder(Seq2SeqDecoder):
             '''
 
             forward_state, layer_attn = layer(state=forward_state,
-                                              encoder_out=encoder_state,
-                                              self_attn_mask=self_attn_mask,
-                                              self_attn_padding_mask=self_attn_padding_mask,
-                                              need_attn=is_attention_layer,
-                                              need_head_weights=is_attention_layer)
+                                            encoder_out=encoder_state,
+                                            self_attn_mask=self_attn_mask,
+                                            self_attn_padding_mask=self_attn_padding_mask,
+                                            need_attn=is_attention_layer,
+                                            need_head_weights=is_attention_layer)
             inner_states.append(forward_state)
 
             if layer_attn is not None and is_attention_layer:
@@ -229,7 +229,7 @@ class TransformerDecoder(Seq2SeqDecoder):
             1.  Why do we need a linear projection after the decoder layers?
                 We need this to project the embeddings to the vocabulary space.
             2.  What would the output represent if features_only=True?
-                The output would be the decoded contexts that would be passed to another decoder transformer block.
+                The output would be the decoded contexts that would be passed to another decoder transformer block(Should change to "another decoder layer", not block. Transformer block represent the model architecture itselt including encoders and decoders.).
                 If features_only is False, then we take these context vectors and project the embedding dimension to the vocabulary space.
                 From there, we can perform softmax to get the distribution of potential output tokens.
             '''

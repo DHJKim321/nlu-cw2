@@ -102,11 +102,11 @@ class TransformerDecoderLayer(nn.Module):
 
         residual = state.clone()
         state, _ = self.self_attn(query=state,
-                                  key=state,
-                                  value=state,
-                                  key_padding_mask=self_attn_padding_mask,
-                                  need_weights=False,
-                                  attn_mask=self_attn_mask)
+                                key=state,
+                                value=state,
+                                key_padding_mask=self_attn_padding_mask,
+                                need_weights=False,
+                                attn_mask=self_attn_mask)
         state = F.dropout(state, p=self.dropout, training=self.training)
         state += residual
         state = self.self_attn_layer_norm(state)
@@ -116,7 +116,7 @@ class TransformerDecoderLayer(nn.Module):
         ___QUESTION-6-DESCRIBE-E-START___
         1.  How does encoder attention differ from self attention?
             In self attention, the sizes of q, k, v are the same as they come from the same place
-            (output of the previous encoder block).
+            (output of the previous encoder layer).
             On the other hand, in encoder-decoder attention, 
             q comes from the previous decoder layer, while k and v comes from the output of the encoder.
         2.  What is the difference between key_padding_mask and attn_mask?
@@ -153,13 +153,13 @@ class TransformerDecoderLayer(nn.Module):
 class MultiHeadAttention(nn.Module):
     """Multi-Head Attention"""
     def __init__(self,
-                 embed_dim,
-                 num_attn_heads,
-                 kdim=None,
-                 vdim=None,
-                 dropout=0.,
-                 self_attention=False,
-                 encoder_decoder_attention=False):
+                embed_dim,
+                num_attn_heads,
+                kdim=None,
+                vdim=None,
+                dropout=0.,
+                self_attention=False,
+                encoder_decoder_attention=False):
         '''
         ___QUESTION-7-MULTIHEAD-ATTENTION-NOTE
         You shouldn't need to change the __init__ of this class for your attention implementation
