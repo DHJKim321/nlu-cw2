@@ -221,7 +221,7 @@ class MultiHeadAttention(nn.Module):
         # attn_weights is the combined output of h parallel heads of Attention(Q,K,V) in Vaswani et al. 2017
         # attn_weights must be size [num_heads, batch_size, tgt_time_steps, src_time_steps]
         attn = torch.zeros(size=(tgt_time_steps, batch_size, embed_dim))
-        attn_weights = torch.zeros(size=(self.num_heads, batch_size, tgt_time_steps, src_time_steps)) if need_weights else None
+        attn_weights = torch.zeros(size=(self.num_heads, batch_size, tgt_time_steps, src_time_steps))
 
         # First need to perform linear projection of Q, K, and V
         projected_q = self.q_proj(query)
@@ -330,6 +330,10 @@ class MultiHeadAttention(nn.Module):
 
         transposed_attn_weights = attn_weights.transpose(0, 1)
         # transposed_attn_weights.size = [batch_size, self.num_heads, tgt_time_steps, src_time_steps]
+
+        # # Perform dropout
+        # transposed_attn_weights = nn.Dropout(p=self.attention_dropout)
+        # # transposed_attn_weights.size = [batch_size, self.num_heads, tgt_time_steps, src_time_steps]
 
         # Merge num heads with batch size to perform parallel computation of each attention head.
         batched_attn_weights = transposed_attn_weights.reshape(batch_size * self.num_heads, tgt_time_steps, src_time_steps)
