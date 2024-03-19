@@ -213,15 +213,6 @@ class MultiHeadAttention(nn.Module):
         Note that you will have to handle edge cases for best model performance. Consider what behaviour should
         be expected if attn_mask or key_padding_mask are given?
         '''
-        print('-----------------------------------------------------')
-        print('this is a multi-head attention! ')
-        print('self_attention',self.self_attention)
-        print('encoder_decorder_attention', self.enc_dec_attention)
-        ##
-        # if self-attention in a encoder layer:
-        # if self-attention in a decoder layer:
-        # if cross-attention in a encode-decode layer:
-        
         
         src_time_steps = key.size(0)
 
