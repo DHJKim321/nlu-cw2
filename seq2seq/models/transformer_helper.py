@@ -318,8 +318,11 @@ class MultiHeadAttention(nn.Module):
         # unfolded_weights.size = [batch_size, self.num_heads, tgt_time_steps, src_time_steps]
 
         # Store to attn_weights if needed, ensure that dimensions are correct
-        attn_weights += unfolded_weights.transpose(0, 1) if need_weights else None
+        attn_weights += unfolded_weights.transpose(0, 1)
         # attn_weights.size = [self.num_heads, batch_size, tgt_time_steps, src_time_steps]
+
+        if not need_weights:
+            attn_weights = None
 
         # Calculate weighted attention values
         batched_attn = torch.bmm(batched_softmax_scores, batched_v)
