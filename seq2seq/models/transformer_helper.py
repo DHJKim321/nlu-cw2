@@ -225,6 +225,7 @@ class MultiHeadAttention(nn.Module):
 
         # First need to perform linear projection of Q, K, and V
         projected_q = self.q_proj(query)
+        print(projected_q.size())
         # query.size = [tgt_time_steps, batch_size, self.embed_dim]
         # If self-attention:
         #   self.q_proj = [self.embed_dim, self.embed_dim]
@@ -235,6 +236,7 @@ class MultiHeadAttention(nn.Module):
 
         # Similarly:
         projected_k = self.k_proj(key)
+        print(projected_k.size())
         # projected_k.size = [src_time_steps, batch_size, self.embed_dim]
         projected_v = self.v_proj(value)
         # projected_v.size = [src_time_steps, batch_size, self.embed_dim]
@@ -289,11 +291,14 @@ class MultiHeadAttention(nn.Module):
         # attn_mask.size = [tgt_time_steps, tgt_time_steps], attn_mask.type = float (-inf)
         # Decoder-only as we want to prevent leftward information flow.
         # tgt_time_steps is a constant value (i.e., maximum input length for decoder transformer)
+
         if attn_mask is not None:
             attention_mask = attn_mask.unsqueeze(dim=0)
             # attention_mask.size = [1, tgt_time_steps, tgt_time_steps]
             scaled_scores += attention_mask
             # scaled_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
+            # If scaled_scores + attention_mask, they should have the same size. batch_size * self.num_heads =\ 1 so that should modifiy it. Currently, attn_maks = None for our test. 
+    
 
         # key_padding_mask.size = [batch_size, src_time_steps], key_padding_mask.type = Boolean
         # True if padding, False if not padding.
