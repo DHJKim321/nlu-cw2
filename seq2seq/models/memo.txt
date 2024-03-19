@@ -6,4 +6,3 @@ This memo should be deleted before submission.
 3. Comment scaled_scores + attention_mask on ___QUESTION-7-MULTIHEAD-ATTENTION-START
 
 4. How did you know the type of key_padding_mask is Boolean?
-5. Is it possible that it has a size [batch_size, src_tiem_steps] while its type is Boolean? # key_padding_mask.size = [batch_size, src_time_steps], key_padding_mask.type = Boolean

@@ -213,7 +213,16 @@ class MultiHeadAttention(nn.Module):
         Note that you will have to handle edge cases for best model performance. Consider what behaviour should
         be expected if attn_mask or key_padding_mask are given?
         '''
-
+        print('-----------------------------------------------------')
+        print('this is a multi-head attention! ')
+        print('self_attention',self.self_attention)
+        print('encoder_decorder_attention', self.enc_dec_attention)
+        ##
+        # if self-attention in a encoder layer:
+        # if self-attention in a decoder layer:
+        # if cross-attention in a encode-decode layer:
+        
+        
         src_time_steps = key.size(0)
 
         # attn is the output of MultiHead(Q,K,V) in Vaswani et al. 2017
@@ -225,80 +234,180 @@ class MultiHeadAttention(nn.Module):
 
         # First need to perform linear projection of Q, K, and V
         projected_q = self.q_proj(query)
-        print(projected_q.size())
         # query.size = [tgt_time_steps, batch_size, self.embed_dim]
-        # If self-attention:
+
+        # If self-attention in a encoder layer:
+        #   self.q_proj = [self.embed_dim, self.embed_dim]
+        #   projected_q.size = [src_time_steps, batch_size, self.embed_dim]
+        # If self-attention in a decoder layer:
         #   self.q_proj = [self.embed_dim, self.embed_dim]
         #   projected_q.size = [tgt_time_steps, batch_size, self.embed_dim]
-        # Else if cross-attention: (self.k_embed_size == self.v_embed_size == self.embed_dim in most cases)
+        # If cross-attention:(self.k_embed_size == self.v_embed_size == self.embed_dim in most cases) (i.e, an encoder-decoder attetion layer)
         #   self.q_proj = [self.k_embed_size, self.embed_dim]
         #   projected_q.size = [tgt_time_steps, batch_size, self.embed_dim]
 
         # Similarly:
         projected_k = self.k_proj(key)
-        print(projected_k.size())
-        # projected_k.size = [src_time_steps, batch_size, self.embed_dim]
+        # if self-attention in a encoder layer:
+        #   projected_k.size = [src_time_steps, batch_size, self.embed_dim]
+        # if self-attention in a decoder layer:
+        #   projected_k.size = [tgt_time_steps, batch_size, self.embed_dim]
+        # if cross-attention layer in a decode layer:
+        #  projected_k.size = [src_time_steps, batch_size, self.embed_dim]
         projected_v = self.v_proj(value)
-        # projected_v.size = [src_time_steps, batch_size, self.embed_dim]
+        # if self-attention in a encoder layer:
+        #   projected_k.size = [src_time_steps, batch_size, self.embed_dim]
+        # if self-attention in a decoder layer:
+        #   projected_k.size = [tgt_time_steps, batch_size, self.embed_dim]
+        # if cross-attention in a decode layer:
+        #  projected_k.size = [src_time_steps, batch_size, self.embed_dim]
+        
+
 
         # Transpose projected q, k, v into [batch_size, time_steps, self.embed_dim]
         projected_q = projected_q.transpose(0, 1)
-        # projected_q.size = [batch_size, tgt_time_steps, self.embed_dim]
+        # if self-attention in a encoder layer:
+        #   projected_q.size = [batch_size, src_time_steps, self.embed_dim]
+        # if self-attention in a decoder layer:
+        #   projected_q.size = [batch_size, tgt_time_steps, self.embed_dim]
+        # if cross-attention in a encode-decode layer:
+        #   projected_q.size = [batch_size, tgt_time_steps, self.embed_dim]
+
         projected_k = projected_k.transpose(0, 1)
-        # projected_k.size = [batch_size, src_time_steps, self.embed_dim]
+        # if self-attention in a encoder layer:
+        #   projected_k.size = [batch_size, src_time_steps, self.embed_dim]
+        # if self-attention in a decoder layer:
+        #   projected_k.size = [batch_size, tgt_time_steps, self.embed_dim]
+        # if cross-attention in a encode-decode layer:
+        #   projected_k.size = [batch_size, src_time_steps, self.embed_dim]
+
         projected_v = projected_v.transpose(0, 1)
-        # projected_v.size = [batch_size, src_time_steps, self.embed_dim]
+        # if self-attention in a encoder layer:
+        #   projected_v.size = [batch_size, src_time_steps, self.embed_dim]
+        # if self-attention in a decoder layer:
+        #   projected_v.size = [batch_size, tgt_time_steps, self.embed_dim]
+        # if cross-attention in a encode-decode layer:
+        #   projected_v.size = [batch_size, src_time_steps, self.embed_dim]
+
 
         # Split projected q, k, v into self.num_heads heads
 
         reshaped_projected_q = projected_q.reshape(batch_size, tgt_time_steps, self.num_heads, self.head_embed_size)
-        # reshaped_projected_q.size = [batch_size, tgt_time_steps, self.num_heads, self.head_embed_size]
+        # if self-attention in a encoder layer:
+        #   reshaped_projected_q.size = [batch_size, src_time_steps, self.num_heads, self.head_embed_size]
+        # if self-attention in a decoder layer:
+        #   reshaped_projected_q.size = [batch_size, tgt_time_steps, self.num_heads, self.head_embed_size]
+        # if cross-attention in a encode-decode layer:
+        #   reshaped_projected_q.size = [batch_size, tgt_time_steps, self.num_heads, self.head_embed_size]
+        
         reshaped_projected_k = projected_k.reshape(batch_size, src_time_steps, self.num_heads, self.head_embed_size)
-        # reshaped_projected_k.size = [batch_size, src_time_steps, self.num_heads, self.head_embed_size]
+        # if self-attention in a encoder layer:
+        #   reshaped_projected_k.size = [batch_size, src_time_steps, self.num_heads, self.head_embed_size]
+        # if self-attention in a decoder layer:
+        #   reshaped_projected_k.size = [batch_size, tgt_time_steps, self.num_heads, self.head_embed_size]
+        # if cross-attention in a encode-decode layer:
+        #   reshaped_projected_k.size = [batch_size, src_time_steps, self.num_heads, self.head_embed_size]
+        
+        
         reshaped_projected_v = projected_v.reshape(batch_size, src_time_steps, self.num_heads, self.head_embed_size)
-        # reshaped_projected_v.size = [batch_size, src_time_steps, self.num_heads, self.head_embed_size]
-
+        # if self-attention in a encoder layer:
+        #  reshaped_projected_v.size = [batch_size, src_time_steps, self.num_heads, self.head_embed_size]
+        # if self-attention in a decoder layer:
+        #  reshaped_projected_v.size = [batch_size, tgt_time_steps, self.num_heads, self.head_embed_size]
+        # if cross-attention in a encode-decode layer:
+        #  reshaped_projected_v.size = [batch_size, src_time_steps, self.num_heads, self.head_embed_size]
+        
         head_projected_q = reshaped_projected_q.transpose(1, 2)
-        # head_projected_q.size = [batch_size, self.num_heads, tgt_time_steps, self.head_embed_size]
+        # if self-attention in a encoder layer:
+        #  head_projected_q.size = [batch_size, self.num_heads, src_time_steps, self.head_embed_size]
+        # if self-attention in a decoder layer:
+        #  head_projected_q.size = [batch_size, self.num_heads, tgt_time_steps, self.head_embed_size]
+        # if cross-attention in a encode-decode layer:
+        #  head_projected_q.size = [batch_size, self.num_heads, tgt_time_steps, self.head_embed_size]
+        
         head_projected_k = reshaped_projected_k.transpose(1, 2)
-        # head_projected_k.size = [batch_size, self.num_heads, src_time_steps, self.head_embed_size]
+        # if self-attention in a encoder layer:
+        #  head_projected_k.size = [batch_size, self.num_heads, src_time_steps, self.head_embed_size]
+        # if self-attention in a decoder layer:
+        #  head_projected_k.size = [batch_size, self.num_heads, tgt_time_steps, self.head_embed_size]
+        # if cross-attention in a encode-decode layer:
+        #  head_projected_k.size = [batch_size, self.num_heads, src_time_steps, self.head_embed_size]
+        
         head_projected_v = reshaped_projected_v.transpose(1, 2)
-        # head_projected_v.size = [batch_size, self.num_heads, src_time_steps, self.head_embed_size]
+        # if self-attention in a encoder layer:
+        #  head_projected_v.size = [batch_size, self.num_heads, src_time_steps, self.head_embed_size]
+        # if self-attention in a decoder layer:
+        #  head_projected_v.size = [batch_size, self.num_heads, tgt_time_steps, self.head_embed_size]
+        # if cross-attention in a encode-decode layer:
+        #  head_projected_v.size = [batch_size, self.num_heads, src_time_steps, self.head_embed_size]
+        
     
         # Fold each head into the batch dimension
         # I.e., Treat each x in batch*self.num_heads as its own batch.
         batched_q = head_projected_q.reshape(batch_size * self.num_heads, tgt_time_steps, self.head_embed_size)
-        # batched_q.size = [batch_size * self.num_heads, tgt_time_steps, self.head_embed_size]
+        # if self-attention in a encoder layer:
+        #   batched_q.size = [batch_size * self.num_heads, src_time_steps, self.head_embed_size]
+        # if self-attention in a decoder layer:
+        #   batched_q.size = [batch_size * self.num_heads, tgt_time_steps, self.head_embed_size]
+        # if cross-attention in a encode-decode layer:
+        #   batched_q.size = [batch_size * self.num_heads, tgt_time_steps, self.head_embed_size]
+        
         batched_k = head_projected_k.reshape(batch_size * self.num_heads, src_time_steps, self.head_embed_size)
-        # batched_k.size = [batch_size * self.num_heads, src_time_steps, self.head_embed_size]
+        # if self-attention in a encoder layer:
+        #   batched_k.reshape(batch_size * self.num_heads, src_time_steps, self.head_embed_size)
+        # if self-attention in a decoder layer:
+        #   batched_k.size = [batch_size * self.num_heads, tgt_time_steps, self.head_embed_size]
+        # if cross-attention in a encode-decode layer:
+        #   batched_k.size = [batch_size * self.num_heads, src_time_steps, self.head_embed_size]
+        
         batched_v = head_projected_v.reshape(batch_size * self.num_heads, src_time_steps, self.head_embed_size)
-        # batched_v.size = [batch_size * self.num_heads, src_time_steps, self.head_embed_size]
+        # if self-attention in a encoder layer:
+        #   batched_v.size = [batch_size * self.num_heads, src_time_steps, self.head_embed_size]
+        # if self-attention in a decoder layer:
+        #   batched_v.size = [batch_size * self.num_heads, tgt_time_steps, self.head_embed_size]
+        # if cross-attention in a encode-decode layer:
+        #   batched_v.size = [batch_size * self.num_heads, src_time_steps, self.head_embed_size]
 
         # Calculate the attention weights
         transposed_batched_k = batched_k.transpose(1, 2)
-        # transposed_batched_k.size = [batch_size * self.num_heads, self.head_embed_size, src_time_steps]
+        # if self-attention in a encoder layer:
+        #  transposed_batched_k.size = [batch_size * self.num_heads, self.head_embed_size, src_time_steps]
+        # if self-attention in a decoder layer:
+        #  transposed_batched_k.size = [batch_size * self.num_heads, self.head_embed_size, tgt_time_steps]
+        # if cross-attention in a encode-decode layer:
+        #  transposed_batched_k.size = [batch_size * self.num_heads, self.head_embed_size, src_time_steps]
+        
 
         raw_scores = torch.bmm(batched_q, transposed_batched_k)
-        # raw_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
-
+        # if self-attention in a encoder layer:
+        #  raw_scores.size = [batch_size * self.num_heads, src_time_steps, src_time_steps]
+        # if self-attention in a decoder layer:
+        #  raw_scores.size = [batch_size * self.num_heads, tgt_time_steps, tgt_time_steps]
+        # if cross-attention in a encode-decode layer:
+        #  raw_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
+        
+    
         scaled_scores = raw_scores / self.head_scaling
-        # scaled_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
+        # if self-attention in a encoder layer:
+        #  scaled_scores.size = [batch_size * self.num_heads, src_time_steps, src_time_steps]
+        # if self-attention in a decoder layer:
+        #  scaled_scores.size = [batch_size * self.num_heads, tgt_time_steps, tgt_time_steps]
+        # if cross-attention in a encode-decode layer:
+        #  scaled_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
+        
 
         # If masks are provided:
         # Mask value must be -inf for all values in the input of the softmax according to Vaswani et al. 2017.
         # This ensures that the subsequent softmax operation will result in 0 for all masked values.
 
         # attn_mask.size = [tgt_time_steps, tgt_time_steps], attn_mask.type = float (-inf)
-        # Decoder-only as we want to prevent leftward information flow.
+        # Only self attention in a Decoder layer as we want to prevent leftward information flow.
         # tgt_time_steps is a constant value (i.e., maximum input length for decoder transformer)
-
         if attn_mask is not None:
             attention_mask = attn_mask.unsqueeze(dim=0)
             # attention_mask.size = [1, tgt_time_steps, tgt_time_steps]
-            scaled_scores += attention_mask
-            # scaled_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
-            # If scaled_scores + attention_mask, they should have the same size. batch_size * self.num_heads =\ 1 so that should modifiy it. Currently, attn_maks = None for our test. 
-    
+            scaled_scores += attention_mask            
+            # scaled_scores.size = [batch_size * self.num_heads, tgt_time_steps, tgt_time_steps]
 
         # key_padding_mask.size = [batch_size, src_time_steps], key_padding_mask.type = Boolean
         # True if padding, False if not padding.
@@ -310,46 +419,121 @@ class MultiHeadAttention(nn.Module):
             padding_mask = padding_mask.repeat(self.num_heads, 1, 1)
             # padding_mask.size = [batch_size * self.num_heads, 1, src_time_steps]
             scaled_scores = scaled_scores.masked_fill(padding_mask, float('-inf'))
-            # transposed_softmax_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
+            # if self-attention in a encoder layer:
+            #   scaled_scores.size = [batch_size * self.num_heads, src_time_steps, src_time_steps]
+            # if self-attention in a decoder layer:
+            #   scaled_scores.size = [batch_size * self.num_heads, tgt_time_steps, tgt_time_steps]
+            # if cross-attention in a encode-decode layer:
+            #   scaled_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
+            
 
         batched_softmax_scores = F.softmax(scaled_scores, dim=2)
-        # batched_softmax_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
+        # if self-attention in a encoder layer:
+        #   batched_softmax_scores.size = [batch_size * self.num_heads, src_time_steps, src_time_steps]
+        # if self-attention in a decoder layer:
+        #   batched_softmax_scores.size = [batch_size * self.num_heads, tgt_time_steps, tgt_time_steps]
+        # if cross-attention in a encode-decode layer:
+        #   batched_softmax_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
+        
 
         # Perform dropout after calculating attention weights
         batched_softmax_scores = F.dropout(batched_softmax_scores, p=self.attention_dropout, training=self.training)
-        # batched_softmax_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
+        # if self-attention in a encoder layer:
+        #   batched_softmax_scores.size = [batch_size * self.num_heads, src_time_steps, src_time_steps]
+        # if self-attention in a decoder layer:
+        #   batched_softmax_scores.size = [batch_size * self.num_heads, tgt_time_steps, tgt_time_steps]
+        # if cross-attention in a encode-decode layer:
+        #   batched_softmax_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
 
         unfolded_weights = batched_softmax_scores.reshape(batch_size, self.num_heads, tgt_time_steps, src_time_steps)
-        # unfolded_weights.size = [batch_size, self.num_heads, tgt_time_steps, src_time_steps]
-
+        # if self-attention in a encoder layer:
+        #   unfolded_weights.size = [batch_size * self.num_heads, src_time_steps, src_time_steps]
+        # if self-attention in a decoder layer:
+        #   unfolded_weights.size = [batch_size * self.num_heads, tgt_time_steps, tgt_time_steps]
+        # if cross-attention in a encode-decode layer:
+        #   unfolded_weights.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
+        
+        
         # Store to attn_weights if needed, ensure that dimensions are correct
-        attn_weights += unfolded_weights.transpose(0, 1) if need_weights else None
+        attn_weights += unfolded_weights.transpose(0, 1)
+        # if self-attention in a encoder layer:
+        #   attn_weights.size = [batch_size * self.num_heads, src_time_steps, src_time_steps]
+        # if self-attention in a decoder layer:
+        #   attn_weights.size = [batch_size * self.num_heads, tgt_time_steps, tgt_time_steps]
+        # if cross-attention in a encode-decode layer:
+        #   attn_weights.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
+        
         # attn_weights.size = [self.num_heads, batch_size, tgt_time_steps, src_time_steps]
+        
+        if not need_weights:
+            attn_weights = None
 
         # Calculate weighted attention values
         batched_attn = torch.bmm(batched_softmax_scores, batched_v)
-        # batched_attn.size = [batch_size * self.num_heads, tgt_time_steps, self.head_embed_size]
 
+        # if self-attention in a encoder layer:
+        #   batched_attn.size = [batch_size * self.num_heads, src_time_steps, self.head_embed_size]
+        # if self-attention in a decoder layer:
+        #   batched_attn.size = [batch_size * self.num_heads, tgt_time_steps, self.head_embed_size]
+        # if cross-attention in a encode-decode layer:
+        #   batched_attn.size = [batch_size * self.num_heads, tgt_time_steps, self.head_embed_size]
+        
         temp_attn_weights = batched_attn.reshape(batch_size, self.num_heads, tgt_time_steps, self.head_embed_size)
-        # temp_attn.size = [batch_size, self.num_heads, tgt_time_steps, self.head_embed_size]
+        # if self-attention in a encoder layer:
+        #   temp_attn.size = [batch_size, self.num_heads, src_time_steps, self.head_embed_size]
+        # if self-attention in a decoder layer:
+        #   temp_attn.size = [batch_size,  self.num_heads, tgt_time_steps, self.head_embed_size]
+        # if cross-attention in a encode-decode layer:
+        #   temp_attn.size = [batch_size, self.num_heads, tgt_time_steps, self.head_embed_size]
+        
 
         transposed_attn = temp_attn_weights.transpose(1, 2)
-        # transposed_attn.size = [batch_size, tgt_time_steps, self.num_heads, self.head_embed_size]
+        # if self-attention in a encoder layer:
+        #   transposed_attn.size = [batch_size, src_time_steps, self.num_heads, self.head_embed_size]
+        # if self-attention in a decoder layer:
+        #   transposed_attn.size = [batch_size, tgt_time_steps, self.num_heads, self.head_embed_size]
+        # if cross-attention in a encode-decode layer:
+        #   transposed_attn.size = [batch_size, tgt_time_steps, self.num_heads, self.head_embed_size]
+        
 
         # Merge the heads back
         concat_attn = transposed_attn.reshape(batch_size, tgt_time_steps, self.embed_dim)
-        # concat_attn.size = [batch_size, tgt_time_steps, self.embed_dim]
+        # if self-attention in a encoder layer:
+        #   concat_attn.size = [batch_size, src_time_steps, self.embed_dim]
+        # if self-attention in a decoder layer:
+        #   concat_attn.size = [batch_size, tgt_time_steps, self.embed_dim]
+        # if cross-attention in a encode-decode layer:
+        #   concat_attn.size = [batch_size, tgt_time_steps, self.embed_dim]
+        
 
         # Project the concatenated attention values (W^{o})
         final_projected_attn = self.out_proj(concat_attn)
-        # final_projected_attn.size = [batch_size, tgt_time_steps, self.embed_dim]
+        # if self-attention in a encoder layer:
+        #   final_projected_attn.size = [batch_size, src_time_steps, self.embed_dim]
+        # if self-attention in a decoder layer:
+        #   final_projected_attn.size = [batch_size, tgt_time_steps, self.embed_dim]
+        # if cross-attention in a encode-decode layer:
+        #   final_projected_attn.size = [batch_size, tgt_time_steps, self.embed_dim]
+        
 
         transposed_projected_attn = final_projected_attn.transpose(0, 1)
-        # transposed_projected_attn.size = [tgt_time_steps, batch_size, self.embed_dim]
+        # if self-attention in a encoder layer:
+        #   transposed_projected_attn.size = [src_time_steps, batch_size, self.embed_dim]
+        # if self-attention in a decoder layer:
+        #   transposed_projected_attn.size = [tgt_time_steps, batch_size, self.embed_dim]
+        # if cross-attention in a encode-decode layer:
+        #   transposed_projected_attn.size = [tgt_time_steps, batch_size, self.embed_dim]
+    
 
         # Add the projected attention values to the attn tensor and ensure that dimensions are correct
         attn += transposed_projected_attn
-        # attn.size = [tgt_time_steps, batch_size, self.embed_dim]
+        # if self-attention in a encoder layer:
+        #   attn.size = [src_time_steps, batch_size, self.embed_dim]
+        # if self-attention in a decoder layer:
+        #   attn.size = [tgt_time_steps, batch_size, self.embed_dim]
+        # if cross-attention in a encode-decode layer:
+        #   attn.size = [tgt_time_steps, batch_size, self.embed_dim]
+    
 
         '''
         ___QUESTION-7-MULTIHEAD-ATTENTION-END
