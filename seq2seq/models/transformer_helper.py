@@ -295,7 +295,6 @@ class MultiHeadAttention(nn.Module):
             # attention_mask.size = [1, tgt_time_steps, tgt_time_steps]
             scaled_scores += attention_mask
             # scaled_scores.size = [batch_size * self.num_heads, tgt_time_steps, src_time_steps]
-            # If scaled_scores + attention_mask, they should have the same size. batch_size * self.num_heads =\ 1 so that should modifiy it. Currently, attn_maks = None for our test. 
     
 
         # key_padding_mask.size = [batch_size, src_time_steps], key_padding_mask.type = Boolean
