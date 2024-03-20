@@ -225,7 +225,6 @@ class MultiHeadAttention(nn.Module):
 
         # First need to perform linear projection of Q, K, and V
         projected_q = self.q_proj(query)
-        print(projected_q.size())
         # query.size = [tgt_time_steps, batch_size, self.embed_dim]
         # If self-attention:
         #   self.q_proj = [self.embed_dim, self.embed_dim]
@@ -236,7 +235,6 @@ class MultiHeadAttention(nn.Module):
 
         # Similarly:
         projected_k = self.k_proj(key)
-        print(projected_k.size())
         # projected_k.size = [src_time_steps, batch_size, self.embed_dim]
         projected_v = self.v_proj(value)
         # projected_v.size = [src_time_steps, batch_size, self.embed_dim]
